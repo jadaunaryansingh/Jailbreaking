@@ -6,7 +6,7 @@ import {
   User,
   AuthError,
 } from "firebase/auth";
-import { ref, get } from "firebase/database";
+import { ref, get, set } from "firebase/database";
 
 interface UserProfile {
   id: string;
@@ -17,6 +17,8 @@ interface UserProfile {
   promptsUsed: number;
   totalScore: number;
   questionsCompleted: number;
+  levelCompleted?: string;
+  completionTime?: number;
 }
 
 interface AuthContextType {
@@ -54,6 +56,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               ...snapshot.val(),
               id: currentUser.uid,
             });
+          } else {
+            const bootstrapProfile: UserProfile = {
+              id: currentUser.uid,
+              email: currentUser.email || "",
+              name: (currentUser.email || "").split("@")[0] || "user",
+              currentLevel: 1,
+              currentQuestion: 1,
+              promptsUsed: 0,
+              totalScore: 0,
+              questionsCompleted: 0,
+              levelCompleted: "none",
+              completionTime: 0,
+            };
+            try {
+              await set(userRef, bootstrapProfile);
+            } catch {}
+            setUserProfile(bootstrapProfile);
           }
         } catch (err) {
           console.error("Error fetching user profile:", err);
@@ -100,25 +119,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           promptsUsed: 0,
           totalScore: 0,
           questionsCompleted: 0,
+          levelCompleted: "none",
+          completionTime: 0,
         };
+        try {
+          await set(userRef, newProfile);
+        } catch {}
         setUserProfile(newProfile);
       }
     } catch (err) {
       const authError = err as AuthError;
-      let errorMessage = "Login failed";
-
-      if (authError.code === "auth/user-not-found") {
-        errorMessage = "User not found";
-      } else if (authError.code === "auth/wrong-password") {
-        errorMessage = "Invalid password";
-      } else if (authError.code === "auth/invalid-email") {
-        errorMessage = "Invalid email format";
-      } else if (authError.code === "auth/user-disabled") {
-        errorMessage = "User account is disabled";
-      }
+      console.error("Auth login error:", authError.code, authError.message);
+      let errorMessage =
+        authError.code === "auth/user-not-found"
+          ? "User not found"
+          : authError.code === "auth/wrong-password"
+          ? "Invalid password"
+          : authError.code === "auth/invalid-email"
+          ? "Invalid email format"
+          : authError.code === "auth/missing-email"
+          ? "Email is required"
+          : authError.code === "auth/missing-password"
+          ? "Password is required"
+          : authError.code === "auth/user-disabled"
+          ? "User account is disabled"
+          : authError.code === "auth/operation-not-allowed"
+          ? "Email/password sign-in is disabled in Firebase"
+          : authError.code === "auth/network-request-failed"
+          ? "Network error. Check your connection"
+          : authError.code === "auth/too-many-requests"
+          ? "Too many attempts. Try again later"
+          : authError.code === "auth/unauthorized-domain"
+          ? "Unauthorized domain. Add localhost and your deploy domain in Firebase Auth settings"
+          : authError.code === "auth/invalid-api-key"
+          ? "Invalid API key. Check your Firebase env variables"
+          : authError.code === "auth/app-not-authorized"
+          ? "App not authorized for this project. Verify project IDs and domains"
+          : authError.code === "auth/missing-recaptcha-token"
+          ? "Verification required. Complete the security check and try again"
+          : authError.code === "auth/invalid-recaptcha-token" ||
+            authError.code === "auth/expired-recaptcha-token"
+          ? "Security check failed. Refresh and try again"
+          : authError.code === "auth/invalid-credential" ||
+            authError.code === "auth/invalid-login-credentials"
+          ? "Invalid email or password"
+          : "Login failed"
 
       setError(errorMessage);
-      throw err;
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
