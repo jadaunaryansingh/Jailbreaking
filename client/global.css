@@ -1,0 +1,178 @@
+/** @import must precede all other statements */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Tailwind CSS theme - Dark Hacker/Cyber theme with neon accents
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   * A different format will require also updating the theme in tailwind.config.ts.
+  */
+  :root {
+    color-scheme: dark;
+
+    /* Dark cyberpunk background */
+    --background: 200 50% 8%;
+    --foreground: 200 40% 96%;
+
+    /* Glassmorphism cards */
+    --card: 200 50% 12%;
+    --card-foreground: 200 40% 96%;
+
+    --popover: 200 50% 12%;
+    --popover-foreground: 200 40% 96%;
+
+    /* Neon cyan primary */
+    --primary: 180 100% 50%;
+    --primary-foreground: 200 50% 8%;
+
+    /* Dark secondary with slight tint */
+    --secondary: 200 50% 15%;
+    --secondary-foreground: 200 40% 96%;
+
+    /* Muted elements */
+    --muted: 200 50% 20%;
+    --muted-foreground: 200 30% 60%;
+
+    /* Neon magenta accent */
+    --accent: 280 100% 50%;
+    --accent-foreground: 200 50% 8%;
+
+    /* Error/destructive - neon red/pink */
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 200 50% 8%;
+
+    /* Borders - subtle glow effect */
+    --border: 200 50% 20%;
+    --input: 200 50% 15%;
+    --ring: 180 100% 50%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 200 50% 10%;
+    --sidebar-foreground: 200 40% 96%;
+    --sidebar-primary: 180 100% 50%;
+    --sidebar-primary-foreground: 200 50% 8%;
+    --sidebar-accent: 280 100% 50%;
+    --sidebar-accent-foreground: 200 40% 96%;
+    --sidebar-border: 200 50% 18%;
+    --sidebar-ring: 180 100% 50%;
+  }
+
+  .dark {
+    --background: 200 50% 8%;
+    --foreground: 200 40% 96%;
+
+    --card: 200 50% 12%;
+    --card-foreground: 200 40% 96%;
+
+    --popover: 200 50% 12%;
+    --popover-foreground: 200 40% 96%;
+
+    --primary: 180 100% 50%;
+    --primary-foreground: 200 50% 8%;
+
+    --secondary: 200 50% 15%;
+    --secondary-foreground: 200 40% 96%;
+
+    --muted: 200 50% 20%;
+    --muted-foreground: 200 30% 60%;
+
+    --accent: 280 100% 50%;
+    --accent-foreground: 200 50% 8%;
+
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 200 50% 8%;
+
+    --border: 200 50% 20%;
+    --input: 200 50% 15%;
+    --ring: 180 100% 50%;
+
+    --sidebar-background: 200 50% 10%;
+    --sidebar-foreground: 200 40% 96%;
+    --sidebar-primary: 180 100% 50%;
+    --sidebar-primary-foreground: 200 50% 8%;
+    --sidebar-accent: 280 100% 50%;
+    --sidebar-accent-foreground: 200 40% 96%;
+    --sidebar-border: 200 50% 18%;
+    --sidebar-ring: 180 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground dark;
+    font-family: "Inter", sans-serif;
+    background: linear-gradient(135deg, hsl(200, 50%, 8%) 0%, hsl(200, 40%, 10%) 100%);
+  }
+
+  :where(p, span, li, h1, h2, h3, h4, h5, h6, a, button, label, td, th) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  pre,
+  code {
+    overflow-x: auto;
+    white-space: pre;
+    font-family: "JetBrains Mono", monospace;
+  }
+
+  /* Scrollbar styling for cyberpunk feel */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(200, 50%, 12%);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(180, 100%, 50%);
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(180, 100%, 60%);
+    box-shadow: 0 0 10px hsl(180, 100%, 50%);
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/40 backdrop-blur-md border border-border rounded-lg;
+    background: linear-gradient(135deg, rgba(32, 99, 137, 0.3) 0%, rgba(60, 85, 110, 0.2) 100%);
+  }
+
+  .neon-glow-cyan {
+    @apply text-neon-cyan;
+    text-shadow: 0 0 10px #00f0ff, 0 0 20px #00f0ff;
+  }
+
+  .neon-glow-magenta {
+    @apply text-neon-magenta;
+    text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff;
+  }
+
+  .neon-border-cyan {
+    @apply border border-neon-cyan;
+    box-shadow: 0 0 10px #00f0ff;
+  }
+
+  .neon-border-magenta {
+    @apply border border-neon-magenta;
+    box-shadow: 0 0 10px #ff00ff;
+  }
+
+  .terminal-font {
+    font-family: "JetBrains Mono", monospace;
+  }
+}
