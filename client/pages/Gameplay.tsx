@@ -4,13 +4,13 @@ import { useGame } from "@/context/GameContext";
 import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { getQuestion, sendMessage, type Level } from "@/services/aiService";
-import { BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 
 export default function Gameplay() {
   const navigate = useNavigate();
   const location = useLocation();
   const { userProfile } = useAuth();
-  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion } = useGame();
+  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, finishLevel } = useGame();
 
   const level = (location.state?.level || "easy") as Level;
   const [currentQuestionNumber, setCurrentQuestionNumber] = useState(1);
@@ -20,6 +20,7 @@ export default function Gameplay() {
   const [isLoading, setIsLoading] = useState(false);
   const [questionCompleted, setQuestionCompleted] = useState(false);
   const [jailbroken, setJailbroken] = useState(false);
+  const [hintsRevealed, setHintsRevealed] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -53,9 +54,7 @@ export default function Gameplay() {
           (m) =>
             m.role === "user"
               ? new HumanMessage({ content: m.content })
-              : new (require("@langchain/core/messages").AIMessage)({
-                  content: m.content,
-                })
+              : new AIMessage({ content: m.content })
         ),
         promptsUsed
       );
@@ -69,15 +68,18 @@ export default function Gameplay() {
       // Check if answer is revealed in the response
       if (
         response.response.toLowerCase().includes(currentQuestion.hiddenWord) &&
-        response.response.toLowerCase().includes("access granted")
+        (response.response.toLowerCase().includes("yes") ||
+         response.response.toLowerCase().includes("you got it") ||
+         response.response.toLowerCase().includes("correct"))
       ) {
         setJailbroken(true);
         setQuestionCompleted(true);
 
-        // Auto-complete after animation
-        setTimeout(() => {
-          completeQuestion(true);
-        }, 1500);
+        // Auto-complete after animation, then move to next question
+        setTimeout(async () => {
+          await completeQuestion(true);
+          moveToNextQuestion();
+        }, 2000);
       }
 
       // Check if prompts exhausted
@@ -86,8 +88,8 @@ export default function Gameplay() {
         setJailbroken(false);
 
         // Auto-move to next question
-        setTimeout(() => {
-          completeQuestion(false);
+        setTimeout(async () => {
+          await completeQuestion(false);
           moveToNextQuestion();
         }, 2000);
       }
@@ -102,16 +104,28 @@ export default function Gameplay() {
     }
   };
 
-  const moveToNextQuestion = () => {
+  const moveToNextQuestion = async () => {
     if (currentQuestionNumber < 5) {
-      setCurrentQuestionNumber(currentQuestionNumber + 1);
+      const nextQuestion = currentQuestionNumber + 1;
+      setCurrentQuestionNumber(nextQuestion);
       setPromptsUsed(0);
       setMessages([]);
       setQuestionCompleted(false);
       setJailbroken(false);
+      setHintsRevealed(0);
+      startQuestion(nextQuestion);
     } else {
-      // Level completed - go back to level selection
+      // Level completed - finish level and go back to level selection
+      if (gameSession) {
+        await finishLevel();
+      }
       navigate("/levels");
+    }
+  };
+
+  const revealHint = () => {
+    if (hintsRevealed < 5 && !questionCompleted) {
+      setHintsRevealed(hintsRevealed + 1);
     }
   };
 
@@ -311,9 +325,20 @@ export default function Gameplay() {
                     <p className="text-neon-green font-bold">
                       ✓ JAILBREAK SUCCESSFUL
                     </p>
-                    <p className="text-neon-green/70 text-xs mt-1">
-                      Question completed with {promptsUsed} prompts
+                    <p className="text-neon-green/70 text-xs mt-1 mb-3">
+                      Question completed with {promptsUsed} prompts. Moving to next question...
                     </p>
+                    <motion.button
+                      onClick={async () => {
+                        await completeQuestion(true);
+                        moveToNextQuestion();
+                      }}
+                      className="px-4 py-2 bg-neon-green/20 border border-neon-green text-neon-green text-xs font-mono rounded hover:bg-neon-green/30 transition-all"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      NEXT QUESTION →
+                    </motion.button>
                   </motion.div>
                 </motion.div>
               )}
@@ -332,9 +357,20 @@ export default function Gameplay() {
                     <p className="text-neon-magenta font-bold">
                       ✗ MAX PROMPTS REACHED
                     </p>
-                    <p className="text-neon-magenta/70 text-xs mt-1">
+                    <p className="text-neon-magenta/70 text-xs mt-1 mb-3">
                       Moving to next question...
                     </p>
+                    <motion.button
+                      onClick={async () => {
+                        await completeQuestion(false);
+                        moveToNextQuestion();
+                      }}
+                      className="px-4 py-2 bg-neon-magenta/20 border border-neon-magenta text-neon-magenta text-xs font-mono rounded hover:bg-neon-magenta/30 transition-all"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      NEXT QUESTION →
+                    </motion.button>
                   </motion.div>
                 </motion.div>
               )}
@@ -351,6 +387,41 @@ export default function Gameplay() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
         >
+          {/* Hints Section */}
+          <div className="mb-4 pb-4 border-b border-neon-cyan/20">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-neon-cyan/70 text-xs font-mono">
+                HINTS ({hintsRevealed}/5):
+              </span>
+              {hintsRevealed < 5 && !questionCompleted && (
+                <motion.button
+                  type="button"
+                  onClick={revealHint}
+                  className="px-3 py-1 bg-neon-green/10 border border-neon-green text-neon-green text-xs font-mono rounded hover:bg-neon-green/20 transition-all"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  REVEAL HINT
+                </motion.button>
+              )}
+            </div>
+            {hintsRevealed > 0 && (
+              <div className="space-y-2">
+                {currentQuestion.hints.slice(0, hintsRevealed).map((hint, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="px-3 py-2 bg-neon-green/10 border border-neon-green/30 rounded text-neon-green/90 text-xs font-mono"
+                  >
+                    <span className="text-neon-green/70">Hint {index + 1}:</span> {hint}
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Prompt counter */}
           <div className="flex items-center justify-between mb-4 pb-4 border-b border-neon-cyan/20">
             <div className="flex items-center gap-2">

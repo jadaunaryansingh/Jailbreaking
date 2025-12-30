@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { BaseMessage } from "@langchain/core/messages";
 import { database } from "@/services/firebase";
-import { ref, update } from "firebase/database";
+import { ref, update, get } from "firebase/database";
 
 export type Level = "easy" | "medium" | "hard";
 
@@ -114,6 +114,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const completeQuestion = useCallback(async (jailbroken: boolean) => {
+    let updatedSession: GameSessionState | null = null;
+    
     setGameSession((prev) => {
       if (!prev) return prev;
 
@@ -138,11 +140,56 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
       const questionScore = Math.max(0, baseScore - promptPenalty + speedBonus);
 
       updated.totalScore += questionScore;
+      updatedSession = updated;
 
       return updated;
     });
 
-    await saveGameProgress();
+    // Update main user profile for admin dashboard and save progress
+    if (updatedSession) {
+      try {
+        // Get current user data to calculate cumulative totals
+        const userRef = ref(database, `users/${updatedSession.userId}`);
+        const userSnapshot = await get(userRef);
+        const currentUserData = userSnapshot.exists() ? userSnapshot.val() : {};
+        
+        // Calculate cumulative totals (add to existing totals, not replace)
+        const existingTotalScore = currentUserData.totalScore || 0;
+        const existingQuestionsCompleted = currentUserData.questionsCompleted || 0;
+        
+        // Calculate this question's score
+        const currentQ = updatedSession.questions[updatedSession.currentQuestion];
+        const baseScore = 100;
+        const promptPenalty = currentQ.promptsUsed * 10;
+        const timeSpent = Math.floor(
+          (Date.now() - updatedSession.questionStartTime) / 1000
+        );
+        const speedBonus = Math.max(0, 30 - Math.floor(timeSpent / 10));
+        const questionScore = Math.max(0, baseScore - promptPenalty + speedBonus);
+        
+        // Update main user profile with cumulative totals (for admin dashboard)
+        await update(userRef, {
+          totalScore: existingTotalScore + questionScore,
+          questionsCompleted: existingQuestionsCompleted + 1,
+          levelCompleted: updatedSession.currentLevel,
+        });
+        
+        // Also save progress to nested path (per-level data)
+        const progressRef = ref(
+          database,
+          `users/${updatedSession.userId}/progress/${updatedSession.currentLevel}`
+        );
+        await update(progressRef, {
+          currentQuestion: updatedSession.currentQuestion,
+          totalScore: updatedSession.totalScore,
+          questionsCompleted: updatedSession.questionsCompleted,
+          lastUpdated: Date.now(),
+          questions: updatedSession.questions,
+        });
+      } catch (error) {
+        console.error("Error updating user profile:", error);
+      }
+    }
   }, []);
 
   const skipQuestion = useCallback(async () => {
