@@ -9,7 +9,7 @@ import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 export default function Gameplay() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { userProfile } = useAuth();
+  const { userProfile, logout } = useAuth();
   const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion } = useGame();
 
   const level = (location.state?.level || "easy") as Level;
@@ -20,6 +20,7 @@ export default function Gameplay() {
   const [isLoading, setIsLoading] = useState(false);
   const [questionCompleted, setQuestionCompleted] = useState(false);
   const [jailbroken, setJailbroken] = useState(false);
+  const [hintIndex, setHintIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -27,6 +28,11 @@ export default function Gameplay() {
   const maxPrompts = 5;
   const promptsRemaining = maxPrompts - promptsUsed;
   const isLastPrompt = promptsRemaining === 1;
+
+  // Start question tracking in context
+  useEffect(() => {
+    startQuestion(currentQuestionNumber);
+  }, [currentQuestionNumber, startQuestion]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -66,11 +72,8 @@ export default function Gameplay() {
 
       setMessages((prev) => [...prev, { role: "ai", content: response.response }]);
 
-      // Check if answer is revealed in the response
-      if (
-        response.response.toLowerCase().includes(currentQuestion.hiddenWord) &&
-        response.response.toLowerCase().includes("access granted")
-      ) {
+      // Use explicit detection signal from AI service
+      if (response.isJailbroken) {
         setJailbroken(true);
         setQuestionCompleted(true);
 
@@ -207,6 +210,18 @@ export default function Gameplay() {
             whileTap={{ scale: 0.95 }}
           >
             Back
+          </motion.button>
+          <motion.button
+            onClick={async () => {
+              const { logout } = useAuth();
+              await logout();
+              navigate("/login");
+            }}
+            className="glass-card px-4 py-2 text-neon-magenta/70 hover:text-neon-magenta text-xs font-mono uppercase transition-colors"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            Logout
           </motion.button>
         </div>
       </motion.div>
@@ -423,6 +438,19 @@ export default function Gameplay() {
               SEND
             </motion.button>
 
+            {/* Hint button */}
+            {hintIndex < currentQuestion.hints.length && !questionCompleted && (
+              <motion.button
+                type="button"
+                onClick={() => setHintIndex((i) => Math.min(i + 1, currentQuestion.hints.length))}
+                className="px-4 py-3 bg-neon-cyan/10 border border-neon-cyan text-neon-cyan text-xs font-mono rounded-lg hover:bg-neon-cyan/20 transition-all"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                HINT
+              </motion.button>
+            )}
+
             {currentQuestionNumber < 5 && !questionCompleted && (
               <motion.button
                 type="button"
@@ -435,6 +463,22 @@ export default function Gameplay() {
               </motion.button>
             )}
           </form>
+        </motion.div>
+
+        {/* Hints panel */}
+        <motion.div
+          className="glass-card p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.45 }}
+        >
+          <div className="text-neon-cyan/70 text-xs font-mono mb-2">HINTS</div>
+          <ul className="list-disc list-inside text-neon-cyan/80 text-sm">
+            {currentQuestion.hints.slice(0, hintIndex).map((hint, idx) => (
+              <li key={idx}>{hint}</li>
+            ))}
+            {hintIndex === 0 && <li className="text-neon-cyan/40">Press HINT to reveal</li>}
+          </ul>
         </motion.div>
       </div>
     </motion.div>

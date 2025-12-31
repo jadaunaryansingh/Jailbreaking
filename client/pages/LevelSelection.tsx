@@ -36,7 +36,7 @@ const LEVELS = [
 
 export default function LevelSelection() {
   const navigate = useNavigate();
-  const { userProfile } = useAuth();
+  const { userProfile, logout } = useAuth();
   const { startLevel } = useGame();
   const [selectedLevel, setSelectedLevel] = useState<Level | null>(null);
   const [loading, setLoading] = useState(false);
@@ -138,12 +138,25 @@ export default function LevelSelection() {
         {/* User welcome */}
         {userProfile && (
           <motion.div
-            className="absolute top-8 right-8 glass-card px-6 py-3 text-neon-cyan/80 text-sm font-mono"
+            className="absolute top-8 right-8 flex items-center gap-3"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3 }}
           >
-            Welcome, {userProfile.name}
+            <div className="glass-card px-6 py-3 text-neon-cyan/80 text-sm font-mono">
+              Welcome, {userProfile.name}
+            </div>
+            <motion.button
+              onClick={async () => {
+                await logout();
+                navigate("/login");
+              }}
+              className="px-4 py-2 bg-neon-magenta/10 border border-neon-magenta text-neon-magenta text-xs font-mono rounded-lg hover:bg-neon-magenta/20 transition-all"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              LOGOUT
+            </motion.button>
           </motion.div>
         )}
 
