@@ -4,25 +4,31 @@ import { useGame } from "@/context/GameContext";
 import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { getQuestion, sendMessage, type Level } from "@/services/aiService";
-import { BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 
 export default function Gameplay() {
   const navigate = useNavigate();
   const location = useLocation();
   const { userProfile, logout } = useAuth();
-  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion } = useGame();
+  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress } = useGame();
 
   const level = (location.state?.level || "easy") as Level;
-  const [currentQuestionNumber, setCurrentQuestionNumber] = useState(1);
-  const [promptsUsed, setPromptsUsed] = useState(0);
+  
+  // Initialize from gameSession if available, otherwise default values
+  const initialQuestionNumber = gameSession?.currentQuestion || 1;
+  const savedQuestionState = gameSession?.questions[initialQuestionNumber];
+  
+  const [currentQuestionNumber, setCurrentQuestionNumber] = useState(initialQuestionNumber);
+  const [promptsUsed, setPromptsUsed] = useState(savedQuestionState?.promptsUsed || 0);
   const [messages, setMessages] = useState<Array<{ role: "user" | "ai"; content: string }>>([]);
   const [userInput, setUserInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [questionCompleted, setQuestionCompleted] = useState(false);
-  const [jailbroken, setJailbroken] = useState(false);
+  const [questionCompleted, setQuestionCompleted] = useState(savedQuestionState?.isCompleted || false);
+  const [jailbroken, setJailbroken] = useState(savedQuestionState?.jailbroken || false);
   const [hintIndex, setHintIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const lastLoadedQuestionRef = useRef<number | null>(null);
 
   const currentQuestion = getQuestion(level, currentQuestionNumber);
   const maxPrompts = 5;
@@ -31,8 +37,49 @@ export default function Gameplay() {
 
   // Start question tracking in context
   useEffect(() => {
-    startQuestion(currentQuestionNumber);
-  }, [currentQuestionNumber, startQuestion]);
+    if (gameSession) {
+      startQuestion(currentQuestionNumber);
+    }
+  }, [currentQuestionNumber, startQuestion, gameSession?.userId]);
+
+  // Load saved question state if available (separate effect to avoid infinite loop)
+  useEffect(() => {
+    if (!gameSession) return;
+    
+    // Only load state when question number changes, not on every gameSession update
+    if (lastLoadedQuestionRef.current === currentQuestionNumber) {
+      return;
+    }
+    
+    lastLoadedQuestionRef.current = currentQuestionNumber;
+    
+    const savedState = gameSession.questions[currentQuestionNumber];
+    if (savedState) {
+      setPromptsUsed(savedState.promptsUsed || 0);
+      setQuestionCompleted(savedState.isCompleted || false);
+      setJailbroken(savedState.jailbroken || false);
+      
+      // Restore messages if available (convert BaseMessage to display format)
+      if (savedState.messages && savedState.messages.length > 0) {
+        const restoredMessages = savedState.messages.map((msg: any) => {
+          const content = typeof msg.content === 'string' ? msg.content : msg.content?.content || '';
+          return {
+            role: (msg.constructor.name === 'HumanMessage' ? 'user' : 'ai') as "user" | "ai",
+            content: content as string
+          };
+        });
+        setMessages(restoredMessages);
+      } else {
+        setMessages([]);
+      }
+    } else {
+      // Reset for new question
+      setPromptsUsed(0);
+      setQuestionCompleted(false);
+      setJailbroken(false);
+      setMessages([]);
+    }
+  }, [currentQuestionNumber, gameSession]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -41,6 +88,13 @@ export default function Gameplay() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if question is already completed
+    const isQuestionAlreadyCompleted = gameSession?.questions[currentQuestionNumber]?.isCompleted;
+    if (isQuestionAlreadyCompleted) {
+      console.warn("Question already completed, cannot answer again");
+      return;
+    }
     
     if (!userInput.trim() || isLoading || promptsUsed >= maxPrompts || questionCompleted) {
       return;
@@ -59,7 +113,7 @@ export default function Gameplay() {
           (m) =>
             m.role === "user"
               ? new HumanMessage({ content: m.content })
-              : new (require("@langchain/core/messages").AIMessage)({
+              : new AIMessage({
                   content: m.content,
                 })
         ),
@@ -213,7 +267,8 @@ export default function Gameplay() {
           </motion.button>
           <motion.button
             onClick={async () => {
-              const { logout } = useAuth();
+              // Save progress before logging out
+              await saveGameProgress();
               await logout();
               navigate("/login");
             }}
@@ -248,6 +303,7 @@ export default function Gameplay() {
             <AnimatePresence>
               {messages.length === 0 && !isLoading && (
                 <motion.div
+                  key="empty-state"
                   className="h-full flex items-center justify-center text-center"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -258,7 +314,10 @@ export default function Gameplay() {
                       {">"} System ready. Begin your inquiry...
                     </p>
                     <p className="text-neon-cyan/40 text-xs font-mono">
-                      Ask questions about: {currentQuestion.title}
+                      Goal: {currentQuestion.title}
+                    </p>
+                    <p className="text-neon-cyan/30 text-xs font-mono mt-2">
+                      Ask indirect questions to discover the hidden word
                     </p>
                   </div>
                 </motion.div>
@@ -266,7 +325,7 @@ export default function Gameplay() {
 
               {messages.map((message, index) => (
                 <motion.div
-                  key={index}
+                  key={`message-${index}-${message.content.substring(0, 20)}`}
                   variants={messageVariants}
                   initial="hidden"
                   animate="visible"
@@ -313,13 +372,14 @@ export default function Gameplay() {
 
               {jailbroken && (
                 <motion.div
+                  key="jailbreak-success"
                   className="text-center py-4"
                   variants={successVariants}
                   initial="hidden"
                   animate="visible"
                 >
                   <motion.div
-                    className="inline-block px-6 py-3 bg-neon-green/20 border-2 border-neon-green rounded-lg"
+                    className="inline-block px-6 py-3 bg-neon-green/20 border-2 border-neon-green rounded-lg mb-4"
                     animate={{ scale: [1, 1.05, 1] }}
                     transition={{ duration: 0.5, repeat: Infinity }}
                   >
@@ -330,11 +390,43 @@ export default function Gameplay() {
                       Question completed with {promptsUsed} prompts
                     </p>
                   </motion.div>
+                  {currentQuestionNumber < 5 ? (
+                    <motion.button
+                      onClick={async () => {
+                        // Ensure question is marked as completed
+                        if (!gameSession?.questions[currentQuestionNumber]?.isCompleted) {
+                          await completeQuestion(true);
+                        }
+                        moveToNextQuestion();
+                      }}
+                      className="px-6 py-3 bg-neon-green/20 border-2 border-neon-green text-neon-green font-bold rounded-lg hover:bg-neon-green/30 transition-all font-mono text-sm"
+                      whileHover={{ scale: 1.05, boxShadow: "0 0 15px #00ff41" }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      NEXT QUESTION →
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      onClick={async () => {
+                        // Ensure question is marked as completed
+                        if (!gameSession?.questions[currentQuestionNumber]?.isCompleted) {
+                          await completeQuestion(true);
+                        }
+                        navigate("/levels");
+                      }}
+                      className="px-6 py-3 bg-neon-green/20 border-2 border-neon-green text-neon-green font-bold rounded-lg hover:bg-neon-green/30 transition-all font-mono text-sm"
+                      whileHover={{ scale: 1.05, boxShadow: "0 0 15px #00ff41" }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      BACK TO LEVELS →
+                    </motion.button>
+                  )}
                 </motion.div>
               )}
 
               {questionCompleted && !jailbroken && (
                 <motion.div
+                  key="max-prompts-reached"
                   className="text-center py-4"
                   variants={warningVariants}
                   initial="hidden"
@@ -419,9 +511,11 @@ export default function Gameplay() {
               type="text"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              disabled={isLoading || questionCompleted || promptsUsed >= maxPrompts}
+              disabled={isLoading || questionCompleted || promptsUsed >= maxPrompts || gameSession?.questions[currentQuestionNumber]?.isCompleted}
               placeholder={
-                questionCompleted
+                gameSession?.questions[currentQuestionNumber]?.isCompleted
+                  ? "Question already completed. Move to next question."
+                  : questionCompleted
                   ? "Question completed. Next in progress..."
                   : "Ask a question about the hidden concept..."
               }
@@ -430,7 +524,7 @@ export default function Gameplay() {
 
             <motion.button
               type="submit"
-              disabled={isLoading || questionCompleted || promptsUsed >= maxPrompts}
+              disabled={isLoading || questionCompleted || promptsUsed >= maxPrompts || gameSession?.questions[currentQuestionNumber]?.isCompleted}
               className="px-6 py-3 bg-neon-cyan/10 border border-neon-cyan text-neon-cyan font-bold rounded-lg hover:bg-neon-cyan/20 transition-all disabled:opacity-50 font-mono text-sm"
               whileHover={{ boxShadow: "0 0 15px #00f0ff" }}
               whileTap={{ scale: 0.95 }}
