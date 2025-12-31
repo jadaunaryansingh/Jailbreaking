@@ -30,9 +30,7 @@ export default function Login() {
         navigate("/levels");
       }, 1500);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : error || "Login failed";
-      setLocalError(message);
+      setLocalError(error || "Login failed");
     }
   };
 
