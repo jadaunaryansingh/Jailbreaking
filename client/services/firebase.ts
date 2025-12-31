@@ -3,14 +3,14 @@ import { getAuth, Auth } from "firebase/auth";
 import { getDatabase, Database } from "firebase/database";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyADh92Vx3NHHXO0yOmBxh-dBdciRGVHvVk",
-  authDomain: "jailbreaking-5d53a.firebaseapp.com",
-  databaseURL: "https://jailbreaking-5d53a-default-rtdb.firebaseio.com",
-  projectId: "jailbreaking-5d53a",
-  storageBucket: "jailbreaking-5d53a.firebasestorage.app",
-  messagingSenderId: "318192799618",
-  appId: "1:318192799618:web:085e241ed729eff7fb099b",
-  measurementId: "G-JK8X7BMETE",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);
