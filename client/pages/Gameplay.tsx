@@ -10,7 +10,7 @@ export default function Gameplay() {
   const navigate = useNavigate();
   const location = useLocation();
   const { userProfile, logout } = useAuth();
-  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress } = useGame();
+  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress, useHint } = useGame();
 
   const level = (location.state?.level || "easy") as Level;
   
@@ -35,6 +35,19 @@ export default function Gameplay() {
   const promptsRemaining = maxPrompts - promptsUsed;
   const isLastPrompt = promptsRemaining === 1;
 
+  const containsWordGuess = (text: string, word: string) => {
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    const tokens = normalize(text).split(" ");
+    const w = normalize(word);
+    const variants = new Set<string>([w, `${w}s`, `${w}es`]);
+    return tokens.some((t) => variants.has(t));
+  };
+
   // Start question tracking in context
   useEffect(() => {
     if (gameSession) {
@@ -52,6 +65,7 @@ export default function Gameplay() {
     }
     
     lastLoadedQuestionRef.current = currentQuestionNumber;
+    setHintIndex(0);
     
     const savedState = gameSession.questions[currentQuestionNumber];
     if (savedState) {
@@ -105,6 +119,18 @@ export default function Gameplay() {
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
+    // Immediate local success check to ensure completion even if API is rate-limited
+    if (containsWordGuess(userMessage, currentQuestion.hiddenWord)) {
+      try {
+        setJailbroken(true);
+        setQuestionCompleted(true);
+        await completeQuestion(true);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     try {
       const response = await sendMessage(
         userMessage,
@@ -131,10 +157,8 @@ export default function Gameplay() {
         setJailbroken(true);
         setQuestionCompleted(true);
 
-        // Auto-complete after animation
-        setTimeout(() => {
-          completeQuestion(true);
-        }, 1500);
+        // Mark complete immediately to prevent re-answer and enable leaderboard update
+        await completeQuestion(true);
       }
 
       // Check if prompts exhausted
@@ -174,7 +198,37 @@ export default function Gameplay() {
 
   const handleSkipQuestion = async () => {
     await skipQuestion();
-    moveToNextQuestion();
+    // Find next incomplete question
+    let nextQ = currentQuestionNumber + 1;
+    if (nextQ > 5) nextQ = 1;
+    // Simple cycle for now, or just go next
+    if (currentQuestionNumber < 5) {
+        setCurrentQuestionNumber(currentQuestionNumber + 1);
+    } else {
+        // Wrap around to 1? Or stay?
+        // User said "go to next question or level"
+        // Let's just go to next ID if < 5
+    }
+  };
+
+  const handleUseHint = () => {
+    if (!gameSession || gameSession.hintsRemaining <= 0) return;
+    
+    // Check if we have hints available for this question
+    if (hintIndex < currentQuestion.hints.length) {
+      useHint();
+      const hint = currentQuestion.hints[hintIndex];
+      setMessages(prev => [...prev, {
+        role: "ai",
+        content: `💡 HINT (${gameSession.hintsRemaining - 1} remaining): ${hint}`
+      }]);
+      setHintIndex(prev => prev + 1);
+    } else {
+      setMessages(prev => [...prev, {
+        role: "ai",
+        content: `⚠️ No more hints available for this question.`
+      }]);
+    }
   };
 
   const progressPercentage = (currentQuestionNumber / 5) * 100;
@@ -241,18 +295,37 @@ export default function Gameplay() {
             </h1>
           </div>
 
-          {/* Progress bar */}
-          <div className="w-full md:w-64">
-            <div className="text-neon-cyan/70 text-xs font-mono mb-2">
-              Q{currentQuestionNumber}/5
+          {/* Progress & Navigation */}
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map(qNum => {
+                  const qState = gameSession?.questions[qNum];
+                  const isCurrent = currentQuestionNumber === qNum;
+                  const isDone = qState?.isCompleted;
+                  return (
+                    <button
+                      key={qNum}
+                      onClick={() => {
+                        if (isDone) return;
+                        setCurrentQuestionNumber(qNum);
+                      }}
+                      disabled={isDone}
+                      className={`w-8 h-8 rounded-full border flex items-center justify-center font-mono text-xs transition-all
+                        ${isCurrent 
+                          ? 'border-neon-cyan bg-neon-cyan/20 text-neon-cyan scale-110 shadow-[0_0_10px_rgba(0,240,255,0.5)]' 
+                          : isDone 
+                            ? 'border-neon-green bg-neon-green/10 text-neon-green' 
+                            : 'border-gray-600 text-gray-400 hover:border-neon-cyan/50 hover:text-neon-cyan/70'
+                        }
+                      `}
+                    >
+                      {isDone ? '✓' : qNum}
+                    </button>
+                  );
+                })}
             </div>
-            <div className="h-2 bg-gray-900/50 rounded-full overflow-hidden border border-neon-cyan/20">
-              <motion.div
-                className="h-full bg-gradient-to-r from-neon-cyan to-neon-magenta"
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercentage}%` }}
-                transition={{ duration: 0.6 }}
-              />
+            <div className="text-neon-magenta/80 text-xs font-mono">
+              LEVEL HINTS: {gameSession?.hintsRemaining ?? 5}/5
             </div>
           </div>
 
@@ -502,6 +575,26 @@ export default function Gameplay() {
               {isLastPrompt && "⚠ FINAL PROMPT"}
               {questionCompleted && "✓ COMPLETE"}
             </motion.div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 ml-4">
+               <button 
+                  type="button"
+                  onClick={handleUseHint}
+                  disabled={!gameSession || gameSession.hintsRemaining <= 0 || questionCompleted || gameSession?.questions[currentQuestionNumber]?.isCompleted}
+                  className="px-2 py-1 text-xs border border-neon-magenta text-neon-magenta rounded hover:bg-neon-magenta/10 disabled:opacity-50 font-mono transition-colors"
+               >
+                 💡 HINT
+               </button>
+               <button 
+                  type="button"
+                  onClick={handleSkipQuestion}
+                  disabled={questionCompleted || gameSession?.questions[currentQuestionNumber]?.isCompleted}
+                  className="px-2 py-1 text-xs border border-gray-500 text-gray-400 rounded hover:border-neon-cyan hover:text-neon-cyan disabled:opacity-50 font-mono transition-colors"
+               >
+                 ⏭ SKIP
+               </button>
+            </div>
           </div>
 
           {/* Input form */}
