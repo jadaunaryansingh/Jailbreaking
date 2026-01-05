@@ -6,7 +6,7 @@ import {
   User,
   AuthError,
 } from "firebase/auth";
-import { ref, get, set, update } from "firebase/database";
+import { ref, get, update } from "firebase/database";
 
 interface UserProfile {
   id: string;
@@ -50,31 +50,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           const userRef = ref(database, `users/${currentUser.uid}`);
           const snapshot = await get(userRef);
           if (snapshot.exists()) {
-            const existingData = snapshot.val();
-            // Ensure name exists, if not set it from email
-            if (!existingData.name && currentUser.email) {
-              const name = currentUser.email.split("@")[0];
-              await update(userRef, { name });
-              existingData.name = name;
-            }
             setUserProfile({
-              ...existingData,
+              ...snapshot.val(),
               id: currentUser.uid,
             });
-          } else {
-            // Create profile if it doesn't exist
-            const newProfile: UserProfile = {
-              id: currentUser.uid,
-              email: currentUser.email || "",
-              name: currentUser.email ? currentUser.email.split("@")[0] : "User",
-              currentLevel: 1,
-              currentQuestion: 1,
-              promptsUsed: 0,
-              totalScore: 0,
-              questionsCompleted: 0,
-            };
-            await set(userRef, newProfile);
-            setUserProfile(newProfile);
           }
         } catch (err) {
           console.error("Error fetching user profile:", err);
@@ -106,19 +85,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const snapshot = await get(userRef);
 
       if (snapshot.exists()) {
-        const existingData = snapshot.val();
-        // Ensure name exists, if not set it from email
-        if (!existingData.name && currentUser.email) {
-          const name = currentUser.email.split("@")[0];
-          await update(userRef, { name });
-          existingData.name = name;
-        }
         setUserProfile({
-          ...existingData,
+          ...snapshot.val(),
           id: currentUser.uid,
         });
       } else {
-        // Create new user profile
         const newProfile: UserProfile = {
           id: currentUser.uid,
           email: currentUser.email || email,
@@ -129,9 +100,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           totalScore: 0,
           questionsCompleted: 0,
         };
-        // Save to database
-        await set(userRef, newProfile);
         setUserProfile(newProfile);
+        try {
+          await update(userRef, newProfile);
+        } catch (e) {
+          console.error("Error creating user profile:", e);
+        }
       }
     } catch (err) {
       const authError = err as AuthError;

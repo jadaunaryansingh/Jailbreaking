@@ -9,77 +9,41 @@ import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 export default function Gameplay() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { userProfile, logout } = useAuth();
-  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress } = useGame();
+  const { userProfile } = useAuth();
+  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress, finishLevel } = useGame();
 
-  const level = (location.state?.level || "easy") as Level;
-  
-  // Initialize from gameSession if available, otherwise default values
-  const initialQuestionNumber = gameSession?.currentQuestion || 1;
-  const savedQuestionState = gameSession?.questions[initialQuestionNumber];
-  
-  const [currentQuestionNumber, setCurrentQuestionNumber] = useState(initialQuestionNumber);
-  const [promptsUsed, setPromptsUsed] = useState(savedQuestionState?.promptsUsed || 0);
-  const [messages, setMessages] = useState<Array<{ role: "user" | "ai"; content: string }>>([]);
+  const level: Level = "easy";
+  const [currentQuestionNumber, setCurrentQuestionNumber] = useState(1);
+  const [promptsUsed, setPromptsUsed] = useState(0);
+  const [messages, setMessages] = useState<Array<{ id: string; role: "user" | "ai"; content: string }>>([]);
   const [userInput, setUserInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [questionCompleted, setQuestionCompleted] = useState(savedQuestionState?.isCompleted || false);
-  const [jailbroken, setJailbroken] = useState(savedQuestionState?.jailbroken || false);
-  const [hintIndex, setHintIndex] = useState(0);
+  const [questionCompleted, setQuestionCompleted] = useState(false);
+  const [jailbroken, setJailbroken] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const lastLoadedQuestionRef = useRef<number | null>(null);
+  const [indirectCount, setIndirectCount] = useState(0);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  useEffect(() => {
+    if (cooldownUntil > 0) {
+      const remaining = Math.max(0, cooldownUntil - Date.now());
+      const t = setTimeout(() => setCooldownUntil(0), remaining);
+      return () => clearTimeout(t);
+    }
+  }, [cooldownUntil]);
+  const newMessageId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const currentQuestion = getQuestion(level, currentQuestionNumber);
-  const maxPrompts = 5;
-  const promptsRemaining = maxPrompts - promptsUsed;
-  const isLastPrompt = promptsRemaining === 1;
 
-  // Start question tracking in context
   useEffect(() => {
     if (gameSession) {
-      startQuestion(currentQuestionNumber);
+      const q = gameSession.currentQuestion || 1;
+      setCurrentQuestionNumber(q);
+      const locked = !!gameSession.questions[q]?.isCompleted;
+      setQuestionCompleted(locked);
+      setPromptsUsed(gameSession.questions[q]?.promptsUsed ?? 0);
     }
-  }, [currentQuestionNumber, startQuestion, gameSession?.userId]);
-
-  // Load saved question state if available (separate effect to avoid infinite loop)
-  useEffect(() => {
-    if (!gameSession) return;
-    
-    // Only load state when question number changes, not on every gameSession update
-    if (lastLoadedQuestionRef.current === currentQuestionNumber) {
-      return;
-    }
-    
-    lastLoadedQuestionRef.current = currentQuestionNumber;
-    
-    const savedState = gameSession.questions[currentQuestionNumber];
-    if (savedState) {
-      setPromptsUsed(savedState.promptsUsed || 0);
-      setQuestionCompleted(savedState.isCompleted || false);
-      setJailbroken(savedState.jailbroken || false);
-      
-      // Restore messages if available (convert BaseMessage to display format)
-      if (savedState.messages && savedState.messages.length > 0) {
-        const restoredMessages = savedState.messages.map((msg: any) => {
-          const content = typeof msg.content === 'string' ? msg.content : msg.content?.content || '';
-          return {
-            role: (msg.constructor.name === 'HumanMessage' ? 'user' : 'ai') as "user" | "ai",
-            content: content as string
-          };
-        });
-        setMessages(restoredMessages);
-      } else {
-        setMessages([]);
-      }
-    } else {
-      // Reset for new question
-      setPromptsUsed(0);
-      setQuestionCompleted(false);
-      setJailbroken(false);
-      setMessages([]);
-    }
-  }, [currentQuestionNumber, gameSession]);
+  }, [gameSession?.currentQuestion, gameSession?.questions]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -89,70 +53,82 @@ export default function Gameplay() {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Check if question is already completed
-    const isQuestionAlreadyCompleted = gameSession?.questions[currentQuestionNumber]?.isCompleted;
-    if (isQuestionAlreadyCompleted) {
-      console.warn("Question already completed, cannot answer again");
-      return;
-    }
-    
-    if (!userInput.trim() || isLoading || promptsUsed >= maxPrompts || questionCompleted) {
+    if (!userInput.trim() || isLoading || questionCompleted || Date.now() < cooldownUntil) {
       return;
     }
 
     const userMessage = userInput.trim();
     setUserInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    setMessages((prev) => [...prev, { id: newMessageId(), role: "user", content: userMessage }]);
     setIsLoading(true);
 
     try {
       const response = await sendMessage(
         userMessage,
         currentQuestion.hiddenWord,
-        messages.filter((m) => m.role === "ai" || m.role === "user").map(
-          (m) =>
+        messages
+          .filter((m) => m.role === "ai" || m.role === "user")
+          .map((m) =>
             m.role === "user"
               ? new HumanMessage({ content: m.content })
-              : new AIMessage({
-                  content: m.content,
-                })
-        ),
-        promptsUsed
+              : new AIMessage({ content: m.content })
+          ),
+        promptsUsed,
+        currentQuestion.hints
       );
 
       const newPromptsUsed = promptsUsed + 1;
       setPromptsUsed(newPromptsUsed);
       updatePromptCount(newPromptsUsed);
 
-      setMessages((prev) => [...prev, { role: "ai", content: response.response }]);
+      setMessages((prev) => [...prev, { id: newMessageId(), role: "ai", content: response.response }]);
 
-      // Use explicit detection signal from AI service
-      if (response.isJailbroken) {
+      const lower = userMessage.toLowerCase();
+      const directGuess =
+        lower.includes(currentQuestion.hiddenWord.toLowerCase()) ||
+        lower.includes("what is the word") ||
+        lower.includes("tell me the word") ||
+        lower.includes("what is the answer") ||
+        lower.includes("reveal the answer") ||
+        lower.startsWith("is it ") ||
+        lower.startsWith("is this ") ||
+        lower.startsWith("is that ");
+      const indirectCue =
+        lower.includes("made of") ||
+        lower.includes("consists of") ||
+        lower.includes("used for") ||
+        lower.includes("usage") ||
+        lower.includes("properties") ||
+        lower.includes("material") ||
+        lower.includes("function") ||
+        lower.includes("shape") ||
+        lower.includes("color") ||
+        lower.includes("size") ||
+        lower.includes("where") ||
+        lower.includes("found in") ||
+        lower.endsWith("?");
+
+      if (!directGuess && indirectCue) {
+        setIndirectCount((prev) => prev + 1);
+      }
+
+      const nextIndirect = (!directGuess && indirectCue) ? indirectCount + 1 : indirectCount;
+      if (nextIndirect >= 3 && !questionCompleted) {
+        const reveal = `Access granted. The word is: ${currentQuestion.hiddenWord}`;
+        setMessages((prev) => [...prev, { id: newMessageId(), role: "ai", content: reveal }]);
         setJailbroken(true);
         setQuestionCompleted(true);
-
-        // Auto-complete after animation
-        setTimeout(() => {
-          completeQuestion(true);
-        }, 1500);
-      }
-
-      // Check if prompts exhausted
-      if (newPromptsUsed >= maxPrompts) {
-        setQuestionCompleted(true);
-        setJailbroken(false);
-
-        // Auto-move to next question
-        setTimeout(() => {
-          completeQuestion(false);
+        setTimeout(async () => {
+          await completeQuestion(true);
           moveToNextQuestion();
-        }, 2000);
+        }, 1200);
       }
+      setCooldownUntil(Date.now() + 2000);
     } catch (error) {
       console.error("Error sending message:", error);
       setMessages((prev) => [
         ...prev,
-        { role: "ai", content: "System error. Please try again." },
+        { id: newMessageId(), role: "ai", content: "System error. Please try again." },
       ]);
     } finally {
       setIsLoading(false);
@@ -160,16 +136,30 @@ export default function Gameplay() {
   };
 
   const moveToNextQuestion = () => {
-    if (currentQuestionNumber < 5) {
-      setCurrentQuestionNumber(currentQuestionNumber + 1);
-      setPromptsUsed(0);
-      setMessages([]);
-      setQuestionCompleted(false);
-      setJailbroken(false);
-    } else {
-      // Level completed - go back to level selection
-      navigate("/levels");
+    if (!gameSession) return;
+    const current = currentQuestionNumber;
+    let next = -1;
+    for (let i = current + 1; i <= 5; i++) {
+      if (!gameSession.questions[i]?.isCompleted) { next = i; break; }
     }
+    if (next === -1) {
+      for (let i = 1; i < current; i++) {
+        if (!gameSession.questions[i]?.isCompleted) { next = i; break; }
+      }
+    }
+    if (next === -1) {
+      finishLevel();
+      navigate("/levels");
+      return;
+    }
+    startQuestion(next);
+    setCurrentQuestionNumber(next);
+    setPromptsUsed(0);
+    setMessages([]);
+    setQuestionCompleted(false);
+    setJailbroken(false);
+    setIndirectCount(0);
+    saveGameProgress();
   };
 
   const handleSkipQuestion = async () => {
@@ -177,7 +167,7 @@ export default function Gameplay() {
     moveToNextQuestion();
   };
 
-  const progressPercentage = (currentQuestionNumber / 5) * 100;
+  const progressPercentage = 100;
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -207,7 +197,7 @@ export default function Gameplay() {
     visible: {
       scale: 1,
       opacity: 1,
-      transition: { duration: 0.6, type: "spring" as const },
+      transition: { duration: 0.6 },
     },
   };
 
@@ -231,30 +221,16 @@ export default function Gameplay() {
         transition={{ delay: 0.2 }}
       >
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          {/* Level info */}
           <div>
             <div className="text-neon-cyan text-xs font-mono uppercase mb-2">
-              Level: {level.toUpperCase()}
+              Conversational Mode
             </div>
             <h1 className="text-2xl font-bold neon-glow-cyan">
-              {currentQuestion.title}
+              Chat with the AI Assistant
             </h1>
           </div>
 
-          {/* Progress bar */}
-          <div className="w-full md:w-64">
-            <div className="text-neon-cyan/70 text-xs font-mono mb-2">
-              Q{currentQuestionNumber}/5
-            </div>
-            <div className="h-2 bg-gray-900/50 rounded-full overflow-hidden border border-neon-cyan/20">
-              <motion.div
-                className="h-full bg-gradient-to-r from-neon-cyan to-neon-magenta"
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercentage}%` }}
-                transition={{ duration: 0.6 }}
-              />
-            </div>
-          </div>
+          
 
           {/* Exit button */}
           <motion.button
@@ -264,19 +240,6 @@ export default function Gameplay() {
             whileTap={{ scale: 0.95 }}
           >
             Back
-          </motion.button>
-          <motion.button
-            onClick={async () => {
-              // Save progress before logging out
-              await saveGameProgress();
-              await logout();
-              navigate("/login");
-            }}
-            className="glass-card px-4 py-2 text-neon-magenta/70 hover:text-neon-magenta text-xs font-mono uppercase transition-colors"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Logout
           </motion.button>
         </div>
       </motion.div>
@@ -298,12 +261,44 @@ export default function Gameplay() {
             </span>
           </div>
 
+          {/* Questions navbar */}
+          <div className="flex items-center gap-2 mb-4">
+            {[1,2,3,4,5].map((q) => {
+              const locked = !!gameSession?.questions[q]?.isCompleted;
+              const isCurrent = q === currentQuestionNumber;
+              return (
+                <button
+                  key={q}
+                  onClick={() => {
+                    if (locked) return;
+                    startQuestion(q);
+                    setCurrentQuestionNumber(q);
+                    setPromptsUsed(gameSession?.questions[q]?.promptsUsed ?? 0);
+                    setMessages([]);
+                    setQuestionCompleted(false);
+                    setJailbroken(false);
+                    setIndirectCount(0);
+                    saveGameProgress();
+                  }}
+                  className={`px-3 py-1 rounded-md font-mono text-xs border ${
+                    locked
+                      ? "bg-gray-800/50 text-gray-500 border-gray-700 cursor-not-allowed"
+                      : isCurrent
+                      ? "bg-neon-cyan/20 text-neon-cyan border-neon-cyan"
+                      : "bg-gray-900/50 text-neon-cyan/70 border-neon-cyan/30"
+                  }`}
+                >
+                  Q{q}{locked ? " 🔒" : ""}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Messages */}
           <div className="flex-1 overflow-y-auto space-y-4 mb-4">
             <AnimatePresence>
               {messages.length === 0 && !isLoading && (
                 <motion.div
-                  key="empty-state"
                   className="h-full flex items-center justify-center text-center"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -313,19 +308,13 @@ export default function Gameplay() {
                     <p className="text-neon-cyan/60 text-sm mb-2">
                       {">"} System ready. Begin your inquiry...
                     </p>
-                    <p className="text-neon-cyan/40 text-xs font-mono">
-                      Goal: {currentQuestion.title}
-                    </p>
-                    <p className="text-neon-cyan/30 text-xs font-mono mt-2">
-                      Ask indirect questions to discover the hidden word
-                    </p>
                   </div>
                 </motion.div>
               )}
 
-              {messages.map((message, index) => (
+              {messages.map((message) => (
                 <motion.div
-                  key={`message-${index}-${message.content.substring(0, 20)}`}
+                  key={message.id}
                   variants={messageVariants}
                   initial="hidden"
                   animate="visible"
@@ -372,14 +361,13 @@ export default function Gameplay() {
 
               {jailbroken && (
                 <motion.div
-                  key="jailbreak-success"
                   className="text-center py-4"
                   variants={successVariants}
                   initial="hidden"
                   animate="visible"
                 >
                   <motion.div
-                    className="inline-block px-6 py-3 bg-neon-green/20 border-2 border-neon-green rounded-lg mb-4"
+                    className="inline-block px-6 py-3 bg-neon-green/20 border-2 border-neon-green rounded-lg"
                     animate={{ scale: [1, 1.05, 1] }}
                     transition={{ duration: 0.5, repeat: Infinity }}
                   >
@@ -390,43 +378,11 @@ export default function Gameplay() {
                       Question completed with {promptsUsed} prompts
                     </p>
                   </motion.div>
-                  {currentQuestionNumber < 5 ? (
-                    <motion.button
-                      onClick={async () => {
-                        // Ensure question is marked as completed
-                        if (!gameSession?.questions[currentQuestionNumber]?.isCompleted) {
-                          await completeQuestion(true);
-                        }
-                        moveToNextQuestion();
-                      }}
-                      className="px-6 py-3 bg-neon-green/20 border-2 border-neon-green text-neon-green font-bold rounded-lg hover:bg-neon-green/30 transition-all font-mono text-sm"
-                      whileHover={{ scale: 1.05, boxShadow: "0 0 15px #00ff41" }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      NEXT QUESTION →
-                    </motion.button>
-                  ) : (
-                    <motion.button
-                      onClick={async () => {
-                        // Ensure question is marked as completed
-                        if (!gameSession?.questions[currentQuestionNumber]?.isCompleted) {
-                          await completeQuestion(true);
-                        }
-                        navigate("/levels");
-                      }}
-                      className="px-6 py-3 bg-neon-green/20 border-2 border-neon-green text-neon-green font-bold rounded-lg hover:bg-neon-green/30 transition-all font-mono text-sm"
-                      whileHover={{ scale: 1.05, boxShadow: "0 0 15px #00ff41" }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      BACK TO LEVELS →
-                    </motion.button>
-                  )}
                 </motion.div>
               )}
 
               {questionCompleted && !jailbroken && (
                 <motion.div
-                  key="max-prompts-reached"
                   className="text-center py-4"
                   variants={warningVariants}
                   initial="hidden"
@@ -451,58 +407,13 @@ export default function Gameplay() {
           </div>
         </motion.div>
 
-        {/* Prompt counter and input area */}
+        {/* Input area */}
         <motion.div
           className="glass-card p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
         >
-          {/* Prompt counter */}
-          <div className="flex items-center justify-between mb-4 pb-4 border-b border-neon-cyan/20">
-            <div className="flex items-center gap-2">
-              <span className="text-neon-cyan/70 text-xs font-mono">
-                PROMPTS REMAINING:
-              </span>
-              <div className="flex gap-1">
-                {[...Array(maxPrompts)].map((_, i) => (
-                  <motion.div
-                    key={i}
-                    className={`w-3 h-3 rounded-full ${
-                      i < promptsUsed
-                        ? "bg-neon-magenta/50"
-                        : isLastPrompt && i === promptsUsed
-                          ? "bg-red-500"
-                          : "bg-neon-cyan/50"
-                    }`}
-                    animate={
-                      isLastPrompt && i === promptsUsed
-                        ? { scale: [1, 1.3, 1] }
-                        : {}
-                    }
-                    transition={{ duration: 0.8, repeat: Infinity }}
-                  />
-                ))}
-              </div>
-              <span
-                className={`text-xs font-mono font-bold ${
-                  isLastPrompt ? "text-red-500 animate-pulse" : "text-neon-cyan"
-                }`}
-              >
-                {promptsRemaining}/{maxPrompts}
-              </span>
-            </div>
-
-            {/* Status */}
-            <motion.div
-              className="text-xs font-mono text-neon-cyan/60"
-              animate={isLastPrompt ? { opacity: [0.5, 1] } : {}}
-              transition={{ duration: 1, repeat: Infinity }}
-            >
-              {isLastPrompt && "⚠ FINAL PROMPT"}
-              {questionCompleted && "✓ COMPLETE"}
-            </motion.div>
-          </div>
 
           {/* Input form */}
           <form onSubmit={handleSendMessage} className="flex gap-2">
@@ -511,11 +422,9 @@ export default function Gameplay() {
               type="text"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              disabled={isLoading || questionCompleted || promptsUsed >= maxPrompts || gameSession?.questions[currentQuestionNumber]?.isCompleted}
+              disabled={isLoading || questionCompleted || cooldownUntil > Date.now()}
               placeholder={
-                gameSession?.questions[currentQuestionNumber]?.isCompleted
-                  ? "Question already completed. Move to next question."
-                  : questionCompleted
+                questionCompleted
                   ? "Question completed. Next in progress..."
                   : "Ask a question about the hidden concept..."
               }
@@ -524,28 +433,15 @@ export default function Gameplay() {
 
             <motion.button
               type="submit"
-              disabled={isLoading || questionCompleted || promptsUsed >= maxPrompts || gameSession?.questions[currentQuestionNumber]?.isCompleted}
+              disabled={isLoading || questionCompleted || cooldownUntil > Date.now()}
               className="px-6 py-3 bg-neon-cyan/10 border border-neon-cyan text-neon-cyan font-bold rounded-lg hover:bg-neon-cyan/20 transition-all disabled:opacity-50 font-mono text-sm"
               whileHover={{ boxShadow: "0 0 15px #00f0ff" }}
               whileTap={{ scale: 0.95 }}
             >
-              SEND
+              {cooldownUntil > Date.now() ? "COOLDOWN…" : "SEND"}
             </motion.button>
 
-            {/* Hint button */}
-            {hintIndex < currentQuestion.hints.length && !questionCompleted && (
-              <motion.button
-                type="button"
-                onClick={() => setHintIndex((i) => Math.min(i + 1, currentQuestion.hints.length))}
-                className="px-4 py-3 bg-neon-cyan/10 border border-neon-cyan text-neon-cyan text-xs font-mono rounded-lg hover:bg-neon-cyan/20 transition-all"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                HINT
-              </motion.button>
-            )}
-
-            {currentQuestionNumber < 5 && !questionCompleted && (
+            {!questionCompleted && (
               <motion.button
                 type="button"
                 onClick={handleSkipQuestion}
@@ -557,22 +453,6 @@ export default function Gameplay() {
               </motion.button>
             )}
           </form>
-        </motion.div>
-
-        {/* Hints panel */}
-        <motion.div
-          className="glass-card p-4"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.45 }}
-        >
-          <div className="text-neon-cyan/70 text-xs font-mono mb-2">HINTS</div>
-          <ul className="list-disc list-inside text-neon-cyan/80 text-sm">
-            {currentQuestion.hints.slice(0, hintIndex).map((hint, idx) => (
-              <li key={idx}>{hint}</li>
-            ))}
-            {hintIndex === 0 && <li className="text-neon-cyan/40">Press HINT to reveal</li>}
-          </ul>
         </motion.div>
       </div>
     </motion.div>

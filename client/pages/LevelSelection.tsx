@@ -9,28 +9,10 @@ const LEVELS = [
     id: "easy",
     title: "EASY",
     difficulty: 1,
-    description: "5 simple objects to identify",
+    description: "Single conversational challenge",
     color: "neon-green",
     accentColor: "rgb(0, 255, 65)",
     icon: "⚡",
-  },
-  {
-    id: "medium",
-    title: "MEDIUM",
-    difficulty: 2,
-    description: "5 intermediate concepts",
-    color: "neon-cyan",
-    accentColor: "rgb(0, 240, 255)",
-    icon: "⚙",
-  },
-  {
-    id: "hard",
-    title: "HARD",
-    difficulty: 3,
-    description: "5 advanced abstractions",
-    color: "neon-magenta",
-    accentColor: "rgb(255, 0, 255)",
-    icon: "💎",
   },
 ];
 
@@ -47,10 +29,12 @@ export default function LevelSelection() {
 
     // Start the game session
     if (userProfile?.id) {
-      await startLevel(userProfile.id, level);
+      startLevel(userProfile.id, "easy");
       
-      // Navigate to gameplay
-      navigate("/gameplay", { state: { level } });
+      // Simulate loading animation
+      setTimeout(() => {
+        navigate("/gameplay", { state: { level: "easy" } });
+      }, 800);
     }
   };
 
@@ -129,7 +113,7 @@ export default function LevelSelection() {
             SELECT YOUR CHALLENGE
           </h1>
           <p className="text-neon-cyan/70 text-sm uppercase tracking-wider">
-            Choose a difficulty level to begin
+            Press start to begin
           </p>
         </motion.div>
 
@@ -158,11 +142,11 @@ export default function LevelSelection() {
         </motion.div>
 
         {/* Level cards */}
-        <motion.div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl mb-8">
+        <motion.div className="grid grid-cols-1 gap-8 w-full max-w-3xl mb-8">
           {LEVELS.map((level, index) => (
             <motion.button
               key={level.id}
-              onClick={() => handleLevelSelect(level.id as Level)}
+              onClick={() => handleLevelSelect("easy")}
               disabled={loading && selectedLevel !== level.id}
               variants={cardVariants}
               initial="hidden"
@@ -223,51 +207,7 @@ export default function LevelSelection() {
                   <p className="text-neon-cyan/60 text-sm">{level.description}</p>
                 </div>
 
-                {/* Progress indicator */}
-                <motion.div
-                  className="flex items-center justify-between pt-4 border-t"
-                  style={{ borderColor: `${level.accentColor}40` }}
-                >
-                  <span
-                    className="text-xs font-mono"
-                    style={{ color: level.accentColor }}
-                  >
-                    5 QUESTIONS
-                  </span>
-
-                  {/* Loading indicator */}
-                  {selectedLevel === level.id && loading && (
-                    <motion.div
-                      className="w-4 h-4 border-2 border-transparent rounded-full"
-                      style={{
-                        borderTopColor: level.accentColor,
-                        borderRightColor: level.accentColor,
-                      }}
-                      animate={{ rotate: 360 }}
-                      transition={{
-                        duration: 1,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
-                    />
-                  )}
-
-                  {/* Arrow indicator */}
-                  {selectedLevel !== level.id && !loading && (
-                    <motion.span
-                      className="text-lg"
-                      animate={{
-                        x: [0, 5, 0],
-                      }}
-                      transition={{
-                        duration: 1.5,
-                        repeat: Infinity,
-                      }}
-                    >
-                      →
-                    </motion.span>
-                  )}
-                </motion.div>
+               
 
                 {/* Pulse border on hover */}
                 <motion.div

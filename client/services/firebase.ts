@@ -13,51 +13,18 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-if (import.meta.env.DEV) {
-  const mask = (v: unknown) =>
-    typeof v === "string" && v.length > 0 ? `loaded (${v.length} chars)` : "missing";
-  console.log("🔎 Firebase env check:", {
-    apiKey: mask(firebaseConfig.apiKey),
-    authDomain: mask(firebaseConfig.authDomain),
-    databaseURL: mask(firebaseConfig.databaseURL),
-    projectId: mask(firebaseConfig.projectId),
-    storageBucket: mask(firebaseConfig.storageBucket),
-    messagingSenderId: mask(firebaseConfig.messagingSenderId),
-    appId: mask(firebaseConfig.appId),
-    measurementId: mask(firebaseConfig.measurementId),
-  });
+console.log("Firebase Config:", {
+  apiKey: firebaseConfig.apiKey ? "Set" : "Missing",
+  authDomain: firebaseConfig.authDomain,
+  projectId: firebaseConfig.projectId,
+});
+
+if (!firebaseConfig.apiKey) {
+  console.error("Firebase API Key is missing. Please check your .env file.");
 }
 
-// Check if Firebase config is complete
-if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId) {
-  console.error("⚠️ Firebase configuration is incomplete. Please add Firebase credentials to your .env file.");
-  console.error("Required variables:");
-  console.error("  - VITE_FIREBASE_API_KEY");
-  console.error("  - VITE_FIREBASE_AUTH_DOMAIN");
-  console.error("  - VITE_FIREBASE_DATABASE_URL");
-  console.error("  - VITE_FIREBASE_PROJECT_ID");
-  console.error("  - VITE_FIREBASE_STORAGE_BUCKET");
-  console.error("  - VITE_FIREBASE_MESSAGING_SENDER_ID");
-  console.error("  - VITE_FIREBASE_APP_ID");
-}
-
-let app;
-let auth: Auth;
-let database: Database;
-
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  database = getDatabase(app);
-} catch (error: any) {
-  console.error("❌ Firebase initialization error:", error.message || error);
-  if (error.code === 'auth/invalid-api-key') {
-    console.error("⚠️ Your Firebase API key is invalid. Please check your .env file.");
-    console.error("   Get your Firebase config from: https://console.firebase.google.com/");
-  }
-  throw error;
-}
-
-export { auth, database };
+const app = initializeApp(firebaseConfig);
+export const auth: Auth = getAuth(app);
+export const database: Database = getDatabase(app);
 
 export default app;
