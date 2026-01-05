@@ -9,8 +9,13 @@ import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 export default function Gameplay() {
   const navigate = useNavigate();
   const location = useLocation();
+<<<<<<< HEAD
   const { userProfile } = useAuth();
   const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress, finishLevel } = useGame();
+=======
+  const { userProfile, logout } = useAuth();
+  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress, useHint } = useGame();
+>>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
 
   const level: Level = "easy";
   const [currentQuestionNumber, setCurrentQuestionNumber] = useState(1);
@@ -35,6 +40,23 @@ export default function Gameplay() {
 
   const currentQuestion = getQuestion(level, currentQuestionNumber);
 
+<<<<<<< HEAD
+=======
+  const containsWordGuess = (text: string, word: string) => {
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    const tokens = normalize(text).split(" ");
+    const w = normalize(word);
+    const variants = new Set<string>([w, `${w}s`, `${w}es`]);
+    return tokens.some((t) => variants.has(t));
+  };
+
+  // Start question tracking in context
+>>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
   useEffect(() => {
     if (gameSession) {
       const q = gameSession.currentQuestion || 1;
@@ -43,7 +65,51 @@ export default function Gameplay() {
       setQuestionCompleted(locked);
       setPromptsUsed(gameSession.questions[q]?.promptsUsed ?? 0);
     }
+<<<<<<< HEAD
   }, [gameSession?.currentQuestion, gameSession?.questions]);
+=======
+  }, [currentQuestionNumber, startQuestion, gameSession?.userId]);
+
+  // Load saved question state if available (separate effect to avoid infinite loop)
+  useEffect(() => {
+    if (!gameSession) return;
+    
+    // Only load state when question number changes, not on every gameSession update
+    if (lastLoadedQuestionRef.current === currentQuestionNumber) {
+      return;
+    }
+    
+    lastLoadedQuestionRef.current = currentQuestionNumber;
+    setHintIndex(0);
+    
+    const savedState = gameSession.questions[currentQuestionNumber];
+    if (savedState) {
+      setPromptsUsed(savedState.promptsUsed || 0);
+      setQuestionCompleted(savedState.isCompleted || false);
+      setJailbroken(savedState.jailbroken || false);
+      
+      // Restore messages if available (convert BaseMessage to display format)
+      if (savedState.messages && savedState.messages.length > 0) {
+        const restoredMessages = savedState.messages.map((msg: any) => {
+          const content = typeof msg.content === 'string' ? msg.content : msg.content?.content || '';
+          return {
+            role: (msg.constructor.name === 'HumanMessage' ? 'user' : 'ai') as "user" | "ai",
+            content: content as string
+          };
+        });
+        setMessages(restoredMessages);
+      } else {
+        setMessages([]);
+      }
+    } else {
+      // Reset for new question
+      setPromptsUsed(0);
+      setQuestionCompleted(false);
+      setJailbroken(false);
+      setMessages([]);
+    }
+  }, [currentQuestionNumber, gameSession]);
+>>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -61,6 +127,18 @@ export default function Gameplay() {
     setUserInput("");
     setMessages((prev) => [...prev, { id: newMessageId(), role: "user", content: userMessage }]);
     setIsLoading(true);
+
+    // Immediate local success check to ensure completion even if API is rate-limited
+    if (containsWordGuess(userMessage, currentQuestion.hiddenWord)) {
+      try {
+        setJailbroken(true);
+        setQuestionCompleted(true);
+        await completeQuestion(true);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
 
     try {
       const response = await sendMessage(
@@ -118,8 +196,24 @@ export default function Gameplay() {
         setMessages((prev) => [...prev, { id: newMessageId(), role: "ai", content: reveal }]);
         setJailbroken(true);
         setQuestionCompleted(true);
+<<<<<<< HEAD
         setTimeout(async () => {
           await completeQuestion(true);
+=======
+
+        // Mark complete immediately to prevent re-answer and enable leaderboard update
+        await completeQuestion(true);
+      }
+
+      // Check if prompts exhausted
+      if (newPromptsUsed >= maxPrompts) {
+        setQuestionCompleted(true);
+        setJailbroken(false);
+
+        // Auto-move to next question
+        setTimeout(() => {
+          completeQuestion(false);
+>>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
           moveToNextQuestion();
         }, 1200);
       }
@@ -164,7 +258,37 @@ export default function Gameplay() {
 
   const handleSkipQuestion = async () => {
     await skipQuestion();
-    moveToNextQuestion();
+    // Find next incomplete question
+    let nextQ = currentQuestionNumber + 1;
+    if (nextQ > 5) nextQ = 1;
+    // Simple cycle for now, or just go next
+    if (currentQuestionNumber < 5) {
+        setCurrentQuestionNumber(currentQuestionNumber + 1);
+    } else {
+        // Wrap around to 1? Or stay?
+        // User said "go to next question or level"
+        // Let's just go to next ID if < 5
+    }
+  };
+
+  const handleUseHint = () => {
+    if (!gameSession || gameSession.hintsRemaining <= 0) return;
+    
+    // Check if we have hints available for this question
+    if (hintIndex < currentQuestion.hints.length) {
+      useHint();
+      const hint = currentQuestion.hints[hintIndex];
+      setMessages(prev => [...prev, {
+        role: "ai",
+        content: `💡 HINT (${gameSession.hintsRemaining - 1} remaining): ${hint}`
+      }]);
+      setHintIndex(prev => prev + 1);
+    } else {
+      setMessages(prev => [...prev, {
+        role: "ai",
+        content: `⚠️ No more hints available for this question.`
+      }]);
+    }
   };
 
   const progressPercentage = 100;
@@ -230,7 +354,43 @@ export default function Gameplay() {
             </h1>
           </div>
 
+<<<<<<< HEAD
           
+=======
+          {/* Progress & Navigation */}
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map(qNum => {
+                  const qState = gameSession?.questions[qNum];
+                  const isCurrent = currentQuestionNumber === qNum;
+                  const isDone = qState?.isCompleted;
+                  return (
+                    <button
+                      key={qNum}
+                      onClick={() => {
+                        if (isDone) return;
+                        setCurrentQuestionNumber(qNum);
+                      }}
+                      disabled={isDone}
+                      className={`w-8 h-8 rounded-full border flex items-center justify-center font-mono text-xs transition-all
+                        ${isCurrent 
+                          ? 'border-neon-cyan bg-neon-cyan/20 text-neon-cyan scale-110 shadow-[0_0_10px_rgba(0,240,255,0.5)]' 
+                          : isDone 
+                            ? 'border-neon-green bg-neon-green/10 text-neon-green' 
+                            : 'border-gray-600 text-gray-400 hover:border-neon-cyan/50 hover:text-neon-cyan/70'
+                        }
+                      `}
+                    >
+                      {isDone ? '✓' : qNum}
+                    </button>
+                  );
+                })}
+            </div>
+            <div className="text-neon-magenta/80 text-xs font-mono">
+              LEVEL HINTS: {gameSession?.hintsRemaining ?? 5}/5
+            </div>
+          </div>
+>>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
 
           {/* Exit button */}
           <motion.button
@@ -414,6 +574,74 @@ export default function Gameplay() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
         >
+<<<<<<< HEAD
+=======
+          {/* Prompt counter */}
+          <div className="flex items-center justify-between mb-4 pb-4 border-b border-neon-cyan/20">
+            <div className="flex items-center gap-2">
+              <span className="text-neon-cyan/70 text-xs font-mono">
+                PROMPTS REMAINING:
+              </span>
+              <div className="flex gap-1">
+                {[...Array(maxPrompts)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className={`w-3 h-3 rounded-full ${
+                      i < promptsUsed
+                        ? "bg-neon-magenta/50"
+                        : isLastPrompt && i === promptsUsed
+                          ? "bg-red-500"
+                          : "bg-neon-cyan/50"
+                    }`}
+                    animate={
+                      isLastPrompt && i === promptsUsed
+                        ? { scale: [1, 1.3, 1] }
+                        : {}
+                    }
+                    transition={{ duration: 0.8, repeat: Infinity }}
+                  />
+                ))}
+              </div>
+              <span
+                className={`text-xs font-mono font-bold ${
+                  isLastPrompt ? "text-red-500 animate-pulse" : "text-neon-cyan"
+                }`}
+              >
+                {promptsRemaining}/{maxPrompts}
+              </span>
+            </div>
+
+            {/* Status */}
+            <motion.div
+              className="text-xs font-mono text-neon-cyan/60"
+              animate={isLastPrompt ? { opacity: [0.5, 1] } : {}}
+              transition={{ duration: 1, repeat: Infinity }}
+            >
+              {isLastPrompt && "⚠ FINAL PROMPT"}
+              {questionCompleted && "✓ COMPLETE"}
+            </motion.div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 ml-4">
+               <button 
+                  type="button"
+                  onClick={handleUseHint}
+                  disabled={!gameSession || gameSession.hintsRemaining <= 0 || questionCompleted || gameSession?.questions[currentQuestionNumber]?.isCompleted}
+                  className="px-2 py-1 text-xs border border-neon-magenta text-neon-magenta rounded hover:bg-neon-magenta/10 disabled:opacity-50 font-mono transition-colors"
+               >
+                 💡 HINT
+               </button>
+               <button 
+                  type="button"
+                  onClick={handleSkipQuestion}
+                  disabled={questionCompleted || gameSession?.questions[currentQuestionNumber]?.isCompleted}
+                  className="px-2 py-1 text-xs border border-gray-500 text-gray-400 rounded hover:border-neon-cyan hover:text-neon-cyan disabled:opacity-50 font-mono transition-colors"
+               >
+                 ⏭ SKIP
+               </button>
+            </div>
+          </div>
+>>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
 
           {/* Input form */}
           <form onSubmit={handleSendMessage} className="flex gap-2">
