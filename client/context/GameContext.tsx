@@ -60,46 +60,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [gameSession]);
 
   const startLevel = useCallback(
-<<<<<<< HEAD
-    (userId: string, _level: Level) => {
-      const level: Level = "easy";
-      const baseSession: GameSessionState = {
-        userId,
-        currentLevel: level,
-        currentQuestion: 1,
-        questions: {},
-        totalScore: 0,
-        questionsCompleted: 0,
-        startTime: Date.now(),
-        levelStartTime: Date.now(),
-        questionStartTime: Date.now(),
-      };
-      for (let i = 1; i <= 5; i++) {
-        baseSession.questions[i] = {
-          questionId: i,
-          promptsUsed: 0,
-          isCompleted: false,
-          isFailed: false,
-          timeSpent: 0,
-          messages: [],
-          jailbroken: false,
-=======
     async (userId: string, level: Level) => {
       try {
-        // Try to load saved progress
-        const progressRef = ref(
-          database,
-          `users/${userId}/progress/${level}`
-        );
+        const progressRef = ref(database, `users/${userId}/progress/${level}`);
         const progressSnapshot = await get(progressRef);
-        
         let newSession: GameSessionState;
-        
         if (progressSnapshot.exists()) {
-          // Load saved progress
           const savedProgress = progressSnapshot.val();
           const savedQuestions = savedProgress.questions || {};
-          
           newSession = {
             userId,
             currentLevel: level,
@@ -107,16 +75,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
             questions: {},
             totalScore: savedProgress.totalScore || 0,
             questionsCompleted: savedProgress.questionsCompleted || 0,
-            hintsRemaining: savedProgress.hintsRemaining !== undefined ? savedProgress.hintsRemaining : 5,
+            hintsRemaining:
+              savedProgress.hintsRemaining !== undefined
+                ? savedProgress.hintsRemaining
+                : 5,
             startTime: savedProgress.startTime || Date.now(),
             levelStartTime: savedProgress.levelStartTime || Date.now(),
             questionStartTime: Date.now(),
           };
-          
-          // Ensure all 5 question slots exist and merge
           for (let i = 1; i <= 5; i++) {
             if (savedQuestions[i]) {
-                newSession.questions[i] = savedQuestions[i];
+              newSession.questions[i] = savedQuestions[i];
             } else {
               newSession.questions[i] = {
                 questionId: i,
@@ -130,7 +99,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           }
         } else {
-          // Create new session
           newSession = {
             userId,
             currentLevel: level,
@@ -143,8 +111,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
             levelStartTime: Date.now(),
             questionStartTime: Date.now(),
           };
-
-          // Initialize 5 question slots
           for (let i = 1; i <= 5; i++) {
             newSession.questions[i] = {
               questionId: i,
@@ -157,11 +123,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
             };
           }
         }
-
         setGameSession(newSession);
       } catch (error) {
         console.error("Error loading game progress:", error);
-        // Fallback to new session on error
         const newSession: GameSessionState = {
           userId,
           currentLevel: level,
@@ -173,35 +137,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
           startTime: Date.now(),
           levelStartTime: Date.now(),
           questionStartTime: Date.now(),
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
         };
+        setGameSession(newSession);
       }
-      setGameSession(baseSession);
-
-      (async () => {
-        try {
-          const userRef = ref(database, `users/${userId}/progress/${level}`);
-          const snapshot = await get(userRef);
-          if (snapshot.exists()) {
-            const data = snapshot.val();
-            setGameSession((prev) => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                currentQuestion: data.currentQuestion ?? 1,
-                totalScore: data.totalScore ?? 0,
-                questionsCompleted: data.questionsCompleted ?? 0,
-                questions: data.questions ?? prev.questions,
-                startTime: prev.startTime,
-                levelStartTime: Date.now(),
-                questionStartTime: Date.now(),
-              };
-            });
-          }
-        } catch (error) {
-          console.error("Error loading saved progress:", error);
-        }
-      })();
     },
     []
   );
@@ -281,96 +219,17 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const completeQuestion = useCallback(async (jailbroken: boolean) => {
-<<<<<<< HEAD
-    let nextState: GameSessionState | null = null;
-    setGameSession((prev) => {
-      if (!prev) return prev;
-
-      const currentQ = prev.questions[prev.currentQuestion];
-      const timeSpent = Math.floor(
-        (Date.now() - prev.questionStartTime) / 1000
-      );
-
-      const updated = { ...prev };
-      updated.questions[prev.currentQuestion] = {
-        ...currentQ,
-        isCompleted: true,
-        jailbroken,
-        timeSpent,
-      };
-      updated.questionsCompleted += 1;
-
-      // Calculate score: 100 base points, minus 10 per prompt used, bonus for speed
-      const baseScore = 100;
-      const promptPenalty = currentQ.promptsUsed * 10;
-      const speedBonus = Math.max(0, 30 - Math.floor(timeSpent / 10));
-      const questionScore = Math.max(0, baseScore - promptPenalty + speedBonus);
-
-      updated.totalScore += questionScore;
-
-      nextState = updated;
-      return updated;
-    });
-
-    try {
-      if (!nextState) return;
-      const userProgressRef = ref(
-        database,
-        `users/${nextState.userId}/progress/${nextState.currentLevel}`
-      );
-      await update(userProgressRef, {
-        currentQuestion: nextState.currentQuestion,
-        totalScore: nextState.totalScore,
-        questionsCompleted: nextState.questionsCompleted,
-        lastUpdated: Date.now(),
-        questions: nextState.questions,
-      });
-      const totalsRef = ref(database, `users/${nextState.userId}`);
-      await update(totalsRef, {
-        totalScore: nextState.totalScore,
-        questionsCompleted: nextState.questionsCompleted,
-        currentLevel:
-          nextState.currentLevel === "easy"
-            ? 1
-            : nextState.currentLevel === "medium"
-            ? 2
-            : 3,
-        currentQuestion: nextState.currentQuestion,
-      });
-      const progressRootRef = ref(database, `users/${nextState.userId}/progress`);
-      await update(progressRootRef, {
-        [nextState.currentLevel]: {
-          currentQuestion: nextState.currentQuestion,
-          totalScore: nextState.totalScore,
-          questionsCompleted: nextState.questionsCompleted,
-          lastUpdated: Date.now(),
-          questions: nextState.questions,
-        },
-      });
-    } catch (error) {
-      console.error("Error saving completion:", error);
-=======
     if (!gameSession) return;
-
     const currentQ = gameSession.questions[gameSession.currentQuestion];
-    
-    // Check if question is already completed - prevent duplicate scoring
     if (currentQ.isCompleted) {
       console.warn("Question already completed, skipping duplicate score");
       return;
     }
-
-    const timeSpent = Math.floor(
-      (Date.now() - gameSession.questionStartTime) / 1000
-    );
-
-    // Calculate score: 100 base points, minus 10 per prompt used, bonus for speed
+    const timeSpent = Math.floor((Date.now() - gameSession.questionStartTime) / 1000);
     const baseScore = 100;
     const promptPenalty = currentQ.promptsUsed * 10;
     const speedBonus = Math.max(0, 30 - Math.floor(timeSpent / 10));
     const questionScore = Math.max(0, baseScore - promptPenalty + speedBonus);
-
-    // Create updated session object locally first
     const updatedSession: GameSessionState = {
       ...gameSession,
       questions: {
@@ -380,59 +239,41 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
           isCompleted: true,
           jailbroken,
           timeSpent,
-        }
+        },
       },
       questionsCompleted: gameSession.questionsCompleted + 1,
       totalScore: gameSession.totalScore + questionScore,
-      lastUpdated: Date.now() // Ensure this is part of the state we want to save
-    } as GameSessionState; // Cast to ensure type compatibility if I added fields
-
+    };
     setGameSession(updatedSession);
-
-    // Use a single atomic transaction to update BOTH global stats AND level progress
     try {
       const userRef = ref(database, `users/${updatedSession.userId}`);
-      
       await runTransaction(userRef, (user) => {
         if (!user) {
-          // Initialize user if completely missing (shouldn't happen usually)
           user = {
-             name: "Unknown",
-             email: "",
-             totalScore: 0,
-             questionsCompleted: 0,
-             levelCompleted: "none",
-             progress: {}
+            name: "Unknown",
+            email: "",
+            totalScore: 0,
+            questionsCompleted: 0,
+            levelCompleted: "none",
+            progress: {},
           };
         }
-
-        // Initialize progress object if missing
         if (!user.progress) user.progress = {};
-        if (!user.progress[updatedSession.currentLevel]) user.progress[updatedSession.currentLevel] = {};
-
-        // Get the specific level progress
+        if (!user.progress[updatedSession.currentLevel])
+          user.progress[updatedSession.currentLevel] = {};
         const levelProgress = user.progress[updatedSession.currentLevel];
         const savedQuestions = levelProgress.questions || {};
-         const savedQ = savedQuestions[updatedSession.currentQuestion];
-
-         // Double check completion in DB within transaction to prevent race conditions
-         if (savedQ && savedQ.isCompleted) {
-           // Already completed in DB, do not increment global stats
-           // But we should still ensure the local progress is synced? 
-           // Actually, if it's done, we just return.
-           return user; // Return user unchanged to avoid aborting transaction
-         }
-
-         // Update global stats
-         user.totalScore = (user.totalScore || 0) + questionScore;
-         user.questionsCompleted = (user.questionsCompleted || 0) + 1;
+        const savedQ = savedQuestions[updatedSession.currentQuestion];
+        if (savedQ && savedQ.isCompleted) {
+          return user;
+        }
+        user.totalScore = (user.totalScore || 0) + questionScore;
+        user.questionsCompleted = (user.questionsCompleted || 0) + 1;
         user.levelCompleted = updatedSession.currentLevel;
-
-        // Update level progress
         user.progress[updatedSession.currentLevel] = {
           ...levelProgress,
           currentQuestion: updatedSession.currentQuestion,
-          totalScore: updatedSession.totalScore, // Level-specific score
+          totalScore: updatedSession.totalScore,
           questionsCompleted: updatedSession.questionsCompleted,
           hintsRemaining: updatedSession.hintsRemaining,
           lastUpdated: Date.now(),
@@ -440,19 +281,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
           levelStartTime: updatedSession.levelStartTime,
           questions: {
             ...savedQuestions,
-            [updatedSession.currentQuestion]: updatedSession.questions[updatedSession.currentQuestion]
-          }
+            [updatedSession.currentQuestion]:
+              updatedSession.questions[updatedSession.currentQuestion],
+          },
         };
-
         return user;
       });
-
     } catch (error) {
       console.error("Error updating user profile and progress:", error);
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
     }
-    
-    // Persist level progress to the dedicated path used by startLevel loader
     try {
       await saveGameProgress(updatedSession);
     } catch (err) {
@@ -497,46 +334,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [gameSession]);
 
-<<<<<<< HEAD
-  const saveGameProgress = useCallback(async () => {
-    if (!gameSession) return;
-
-    try {
-      const userRef = ref(
-        database,
-        `users/${gameSession.userId}/progress/${gameSession.currentLevel}`
-      );
-      await update(userRef, {
-        currentQuestion: gameSession.currentQuestion,
-        totalScore: gameSession.totalScore,
-        questionsCompleted: gameSession.questionsCompleted,
-        lastUpdated: Date.now(),
-        questions: gameSession.questions,
-      });
-      const totalsRef = ref(database, `users/${gameSession.userId}`);
-      await update(totalsRef, {
-        totalScore: gameSession.totalScore,
-        questionsCompleted: gameSession.questionsCompleted,
-        currentLevel: gameSession.currentLevel === "easy" ? 1 : gameSession.currentLevel === "medium" ? 2 : 3,
-        currentQuestion: gameSession.currentQuestion,
-      });
-      const progressRootRef = ref(database, `users/${gameSession.userId}/progress`);
-      await update(progressRootRef, {
-        [gameSession.currentLevel]: {
-          currentQuestion: gameSession.currentQuestion,
-          totalScore: gameSession.totalScore,
-          questionsCompleted: gameSession.questionsCompleted,
-          lastUpdated: Date.now(),
-          questions: gameSession.questions,
-        },
-      });
-    } catch (error) {
-      console.error("Error saving game progress:", error);
-    }
-  }, [gameSession]);
-
-=======
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
   const getProgressPercentage = useCallback(() => {
     if (!gameSession) return 0;
     const completed = Object.values(gameSession.questions).filter((q) => q.isCompleted).length;

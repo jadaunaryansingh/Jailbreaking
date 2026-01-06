@@ -9,13 +9,8 @@ import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 export default function Gameplay() {
   const navigate = useNavigate();
   const location = useLocation();
-<<<<<<< HEAD
   const { userProfile } = useAuth();
-  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress, finishLevel } = useGame();
-=======
-  const { userProfile, logout } = useAuth();
-  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress, useHint } = useGame();
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
+  const { gameSession, startQuestion, updatePromptCount, completeQuestion, skipQuestion, saveGameProgress, useHint, finishLevel } = useGame();
 
   const level: Level = "easy";
   const [currentQuestionNumber, setCurrentQuestionNumber] = useState(1);
@@ -29,6 +24,8 @@ export default function Gameplay() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [indirectCount, setIndirectCount] = useState(0);
   const [cooldownUntil, setCooldownUntil] = useState(0);
+  const lastLoadedQuestionRef = useRef<number>(-1);
+  const [hintIndex, setHintIndex] = useState(0);
   useEffect(() => {
     if (cooldownUntil > 0) {
       const remaining = Math.max(0, cooldownUntil - Date.now());
@@ -40,8 +37,6 @@ export default function Gameplay() {
 
   const currentQuestion = getQuestion(level, currentQuestionNumber);
 
-<<<<<<< HEAD
-=======
   const containsWordGuess = (text: string, word: string) => {
     const normalize = (s: string) =>
       s
@@ -55,8 +50,6 @@ export default function Gameplay() {
     return tokens.some((t) => variants.has(t));
   };
 
-  // Start question tracking in context
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
   useEffect(() => {
     if (gameSession) {
       const q = gameSession.currentQuestion || 1;
@@ -65,36 +58,25 @@ export default function Gameplay() {
       setQuestionCompleted(locked);
       setPromptsUsed(gameSession.questions[q]?.promptsUsed ?? 0);
     }
-<<<<<<< HEAD
   }, [gameSession?.currentQuestion, gameSession?.questions]);
-=======
-  }, [currentQuestionNumber, startQuestion, gameSession?.userId]);
-
-  // Load saved question state if available (separate effect to avoid infinite loop)
   useEffect(() => {
     if (!gameSession) return;
-    
-    // Only load state when question number changes, not on every gameSession update
     if (lastLoadedQuestionRef.current === currentQuestionNumber) {
       return;
     }
-    
     lastLoadedQuestionRef.current = currentQuestionNumber;
     setHintIndex(0);
-    
     const savedState = gameSession.questions[currentQuestionNumber];
     if (savedState) {
       setPromptsUsed(savedState.promptsUsed || 0);
       setQuestionCompleted(savedState.isCompleted || false);
       setJailbroken(savedState.jailbroken || false);
-      
-      // Restore messages if available (convert BaseMessage to display format)
       if (savedState.messages && savedState.messages.length > 0) {
         const restoredMessages = savedState.messages.map((msg: any) => {
-          const content = typeof msg.content === 'string' ? msg.content : msg.content?.content || '';
+          const content = typeof msg.content === "string" ? msg.content : msg.content?.content || "";
           return {
-            role: (msg.constructor.name === 'HumanMessage' ? 'user' : 'ai') as "user" | "ai",
-            content: content as string
+            role: (msg.constructor.name === "HumanMessage" ? "user" : "ai") as "user" | "ai",
+            content: content as string,
           };
         });
         setMessages(restoredMessages);
@@ -102,14 +84,12 @@ export default function Gameplay() {
         setMessages([]);
       }
     } else {
-      // Reset for new question
       setPromptsUsed(0);
       setQuestionCompleted(false);
       setJailbroken(false);
       setMessages([]);
     }
   }, [currentQuestionNumber, gameSession]);
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -196,26 +176,9 @@ export default function Gameplay() {
         setMessages((prev) => [...prev, { id: newMessageId(), role: "ai", content: reveal }]);
         setJailbroken(true);
         setQuestionCompleted(true);
-<<<<<<< HEAD
-        setTimeout(async () => {
-          await completeQuestion(true);
-=======
-
-        // Mark complete immediately to prevent re-answer and enable leaderboard update
         await completeQuestion(true);
-      }
-
-      // Check if prompts exhausted
-      if (newPromptsUsed >= maxPrompts) {
-        setQuestionCompleted(true);
-        setJailbroken(false);
-
-        // Auto-move to next question
-        setTimeout(() => {
-          completeQuestion(false);
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
-          moveToNextQuestion();
-        }, 1200);
+        moveToNextQuestion();
+        setTimeout(() => {}, 1200);
       }
       setCooldownUntil(Date.now() + 2000);
     } catch (error) {
@@ -354,9 +317,6 @@ export default function Gameplay() {
             </h1>
           </div>
 
-<<<<<<< HEAD
-          
-=======
           {/* Progress & Navigation */}
           <div className="flex flex-col items-end gap-2">
             <div className="flex gap-2">
@@ -390,7 +350,6 @@ export default function Gameplay() {
               LEVEL HINTS: {gameSession?.hintsRemaining ?? 5}/5
             </div>
           </div>
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
 
           {/* Exit button */}
           <motion.button
@@ -574,54 +533,7 @@ export default function Gameplay() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
         >
-<<<<<<< HEAD
-=======
-          {/* Prompt counter */}
           <div className="flex items-center justify-between mb-4 pb-4 border-b border-neon-cyan/20">
-            <div className="flex items-center gap-2">
-              <span className="text-neon-cyan/70 text-xs font-mono">
-                PROMPTS REMAINING:
-              </span>
-              <div className="flex gap-1">
-                {[...Array(maxPrompts)].map((_, i) => (
-                  <motion.div
-                    key={i}
-                    className={`w-3 h-3 rounded-full ${
-                      i < promptsUsed
-                        ? "bg-neon-magenta/50"
-                        : isLastPrompt && i === promptsUsed
-                          ? "bg-red-500"
-                          : "bg-neon-cyan/50"
-                    }`}
-                    animate={
-                      isLastPrompt && i === promptsUsed
-                        ? { scale: [1, 1.3, 1] }
-                        : {}
-                    }
-                    transition={{ duration: 0.8, repeat: Infinity }}
-                  />
-                ))}
-              </div>
-              <span
-                className={`text-xs font-mono font-bold ${
-                  isLastPrompt ? "text-red-500 animate-pulse" : "text-neon-cyan"
-                }`}
-              >
-                {promptsRemaining}/{maxPrompts}
-              </span>
-            </div>
-
-            {/* Status */}
-            <motion.div
-              className="text-xs font-mono text-neon-cyan/60"
-              animate={isLastPrompt ? { opacity: [0.5, 1] } : {}}
-              transition={{ duration: 1, repeat: Infinity }}
-            >
-              {isLastPrompt && "⚠ FINAL PROMPT"}
-              {questionCompleted && "✓ COMPLETE"}
-            </motion.div>
-
-            {/* Action Buttons */}
             <div className="flex gap-2 ml-4">
                <button 
                   type="button"
@@ -641,7 +553,6 @@ export default function Gameplay() {
                </button>
             </div>
           </div>
->>>>>>> 500038428625fd526dfbd261b5af36f7dc4c3859
 
           {/* Input form */}
           <form onSubmit={handleSendMessage} className="flex gap-2">
